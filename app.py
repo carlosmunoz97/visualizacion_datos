@@ -1,0 +1,201 @@
+"""
+Dashboard Streamlit — Portafolio de proyectos Colombia.
+Ejecutar: streamlit run app.py
+"""
+
+from __future__ import annotations
+
+import matplotlib.pyplot as plt
+import pandas as pd
+import streamlit as st
+
+from charts import (
+    fig_depto_region,
+    fig_scatter_departamental,
+    fig_scatter_regional,
+    fig_sector_criticos,
+    fig_sector_depto,
+    fig_sector_nacional,
+    fig_treemap,
+)
+from config import CRITICOS, ORDEN_REGION
+from data_loader import (
+    build_analitico,
+    conteo_depto_por_region,
+    load_raw,
+    metricas_clave,
+    presupuesto_depto,
+    resumen_departamentos,
+    resumen_region,
+    tablas_sector,
+    top2_retraso_por_region,
+    treemap_departamentos,
+)
+
+
+@st.cache_data
+def cargar_datos():
+    df = load_raw()
+    analitico = build_analitico(df)
+    orden_cat = sorted(analitico["Categoria"].unique())
+    return {
+        "df": analitico,
+        "treemap": treemap_departamentos(analitico),
+        "conteo_depto": conteo_depto_por_region(analitico),
+        "presup_depto": presupuesto_depto(analitico),
+        "top2": top2_retraso_por_region(analitico),
+        "resumen_region": resumen_region(analitico),
+        "resumen_depto": resumen_departamentos(analitico),
+        "cat_nacional": (sector := tablas_sector(analitico))[0],
+        "cat_criticos": sector[1],
+        "cat_por_critico": sector[2],
+        "orden_cat": orden_cat,
+        "metricas": metricas_clave(analitico),
+    }
+
+
+def main():
+    st.set_page_config(
+        page_title="Portafolio de proyectos — Colombia",
+        page_icon="📊",
+        layout="wide",
+    )
+
+    data = cargar_datos()
+    m = data["metricas"]
+
+    st.sidebar.title("Portafolio Colombia")
+    st.sidebar.metric("Proyectos", f"{m['n_proyectos']:,}")
+    st.sidebar.metric("Presupuesto", f"USD {m['presupuesto_m_usd']:,.1f} M")
+    st.sidebar.metric("% retrasados (país)", f"{m['pct_retrasados_nacional']:.1f} %")
+    st.sidebar.metric("Caribe (benef./M USD)", f"{m['caribe_benef_m']:,.0f}")
+
+    seccion = st.sidebar.radio(
+        "Navegación",
+        [
+            "1. Presupuesto",
+            "2. Ejecución por departamento",
+            "3. Sector (críticos)",
+            "4. Cobertura",
+            "5. Conclusiones",
+        ],
+    )
+
+    st.title("Informe ejecutivo — Visualización del portafolio")
+
+    if seccion.startswith("1"):
+        st.header("¿Dónde está el presupuesto?")
+        st.markdown(
+            """
+**Pregunta:** ¿Cómo se distribuye el presupuesto entre regiones y departamentos?
+
+**Lectura esperada:** Las cinco regiones están parejas (~18–22 %); el detalle relevante está en departamentos como **Meta**, **Amazonas** y **Caquetá**.
+            """
+        )
+        st.plotly_chart(fig_treemap(data["treemap"]), use_container_width=True)
+        st.info(
+            "El portafolio mueve alrededor de **USD 1.435 millones**. "
+            "No priorizar solo por región: Meta (~8,5 % nacional), Amazonas (~7,5 %), Caquetá (~7,0 %)."
+        )
+
+    elif seccion.startswith("2"):
+        st.header("¿Dónde falla la ejecución por departamento?")
+        st.markdown(
+            """
+**Pregunta:** ¿En qué departamentos, dentro de cada región, se concentran los proyectos retrasados?
+
+En cada gráfico, los **dos departamentos con mayor % de retrasos** se muestran a color; el resto en gris.
+            """
+        )
+        region_sel = st.selectbox("Región", ORDEN_REGION)
+        datos = data["conteo_depto"][data["conteo_depto"]["Region"] == region_sel].copy()
+        orden_x = (
+            data["presup_depto"][data["presup_depto"]["Region"] == region_sel]
+            .sort_values("Pct_Pais", ascending=False)["Departamento"]
+            .tolist()
+        )
+        datos["Departamento"] = pd.Categorical(
+            datos["Departamento"], categories=orden_x, ordered=True
+        )
+        datos = datos.sort_values(["Departamento", "Estado"])
+        top_deptos = data["top2"].get(region_sel, set())
+        st.plotly_chart(
+            fig_depto_region(region_sel, datos, orden_x, top_deptos, data["presup_depto"]),
+            use_container_width=True,
+        )
+        if top_deptos:
+            st.caption(f"Destacados en {region_sel}: **{', '.join(sorted(top_deptos))}**")
+
+    elif seccion.startswith("3"):
+        st.header("¿En qué sectores se concentra el gasto y el retraso?")
+        st.markdown(
+            f"""
+**Departamentos críticos:** {", ".join(CRITICOS)} — elegidos por peso presupuestario y % de retrasos
+(véase sección de ejecución). **Energía** se resalta a nivel nacional; **Infraestructura** en el bloque crítico.
+            """
+        )
+        st.subheader("Nacional")
+        st.plotly_chart(
+            fig_sector_nacional(data["cat_nacional"], data["orden_cat"]),
+            use_container_width=True,
+        )
+        st.subheader("Críticos agregados")
+        st.plotly_chart(
+            fig_sector_criticos(data["cat_criticos"], data["orden_cat"]),
+            use_container_width=True,
+        )
+        st.subheader("Detalle por departamento crítico")
+        depto_sel = st.selectbox("Departamento crítico", CRITICOS)
+        st.plotly_chart(
+            fig_sector_depto(data["cat_por_critico"], depto_sel),
+            use_container_width=True,
+        )
+
+    elif seccion.startswith("4"):
+        st.header("¿El gasto se traduce en cobertura?")
+        st.markdown(
+            """
+**Pregunta regional:** ¿Qué región combina alto presupuesto con baja cobertura (beneficiarios por millón USD)?
+
+**Pregunta departamental:** ¿Dónde hay mucho presupuesto, poca cobertura y muchos retrasos?
+            """
+        )
+        st.subheader("Cobertura por región")
+        fig_reg = fig_scatter_regional(data["resumen_region"])
+        st.pyplot(fig_reg)
+        plt.close(fig_reg)
+
+        st.subheader("Cobertura por departamento")
+        fig_dep = fig_scatter_departamental(data["resumen_depto"])
+        st.pyplot(fig_dep)
+        plt.close(fig_dep)
+        st.caption(
+            "Borde rojo: Meta, Magdalena, Atlántico, Bogotá D.C. Color = % proyectos retrasados."
+        )
+
+    else:
+        st.header("Conclusiones y recomendaciones")
+        st.markdown(
+            f"""
+### Contexto
+Portafolio de **{m['n_proyectos']:,} proyectos** y **USD {m['presupuesto_m_usd']:,.1f} millones**.
+**{m['pct_retrasados_nacional']:.1f} %** de proyectos retrasados a nivel país.
+
+### Hallazgo integrado
+- **Presupuesto:** diversificado por región; foco en **Meta** y en **Magdalena / Atlántico** (Caribe).
+- **Ejecución:** retrasos elevados en departamentos destacados por región (p. ej. Magdalena ~29 %, Bogotá ~29 %).
+- **Sector:** **Infraestructura** concentra el peor ratio retraso/presupuesto en críticos; **Energía** alerta nacional.
+- **Cobertura:** **Caribe** con ~**{m['caribe_benef_m']:,.0f}** beneficiarios/M USD (menor entre regiones con alto gasto).
+
+### Recomendaciones
+1. **Caribe** — revisión integrada Magdalena y Atlántico (retrasos + cobertura regional).
+2. **Meta** — seguimiento por mayor peso presupuestario (~8,5 % nacional) y cobertura bajo mediana.
+3. **Bogotá D.C.** — auditoría de Infraestructura y cobertura (~6.747 benef./M USD).
+4. **Sector** — priorizar **Infraestructura** en el bloque crítico; Energía como política nacional.
+5. Decidir con **presupuesto + retrasos + benef./M USD** conjuntos, no solo por región.
+            """
+        )
+
+
+if __name__ == "__main__":
+    main()

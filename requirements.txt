@@ -1,0 +1,8 @@
+# Dependencias de visualizacion_datos.ipynb
+pandas>=2.0
+numpy>=1.24
+matplotlib>=3.7
+ipython>=8.0
+plotly>=5.0
+jupyter>=1.0
+streamlit>=1.28
