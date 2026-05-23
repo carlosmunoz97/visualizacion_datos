@@ -7,6 +7,21 @@ CRITICOS = ["Meta", "Magdalena", "Atlántico", "Bogotá D.C."]
 ORDEN_ESTADO_A = ["Retrasado", "En Planeación", "En Ejecución", "Finalizado"]
 ORDEN_REGION = ["Orinoquía", "Amazonía", "Pacífica", "Caribe", "Andina"]
 
+COLOR_REGION = {
+    "Orinoquía": "#2563EB",
+    "Amazonía": "#16A34A",
+    "Pacífica": "#7C3AED",
+    "Caribe": "#DC2626",
+    "Andina": "#D97706",
+}
+
+COLOR_DEPARTAMENTO_CRITICO = {
+    "Meta": "#2563EB",
+    "Magdalena": "#DC2626",
+    "Atlántico": "#7C3AED",
+    "Bogotá D.C.": "#D97706",
+}
+
 COLOR_DESTACADO = "#2563EB"
 COLOR_NAVY = "#0F172A"
 COLOR_ALERTA = "#DC2626"
@@ -39,3 +54,10 @@ COLOR_METRICA = {
 
 CATEGORIA_DESTACADA_G1 = "Energía"
 CATEGORIA_DESTACADA_G2 = "Infraestructura"
+
+ORDEN_SEGMENTO_RETRASO = ["Bajo", "Medio", "Alto"]
+COLOR_SEGMENTO_RETRASO = {
+    "Bajo": "#16A34A",
+    "Medio": "#D97706",
+    "Alto": "#DC2626",
+}

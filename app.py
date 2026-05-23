@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from charts import (
+    fig_acumulado_proyectos_departamento,
     fig_depto_region,
     fig_scatter_departamental,
     fig_scatter_regional,
@@ -20,6 +21,7 @@ from charts import (
 )
 from config import CRITICOS, ORDEN_REGION
 from data_loader import (
+    acumulado_proyectos_por_departamento,
     build_analitico,
     conteo_depto_por_region,
     load_raw,
@@ -51,6 +53,7 @@ def cargar_datos():
         "cat_por_critico": sector[2],
         "orden_cat": orden_cat,
         "metricas": metricas_clave(analitico),
+        "acum_depto": acumulado_proyectos_por_departamento(analitico),
     }
 
 
@@ -104,7 +107,7 @@ def main():
             """
 **Pregunta:** ¿En qué departamentos, dentro de cada región, se concentran los proyectos retrasados?
 
-En cada gráfico, los **dos departamentos con mayor % de retrasos** se muestran a color; el resto en gris.
+En cada gráfico, los proyectos **retrasados** se muestran en **rojo**; los demás estados en escala de grises.
             """
         )
         region_sel = st.selectbox("Región", ORDEN_REGION)
@@ -120,11 +123,73 @@ En cada gráfico, los **dos departamentos con mayor % de retrasos** se muestran 
         datos = datos.sort_values(["Departamento", "Estado"])
         top_deptos = data["top2"].get(region_sel, set())
         st.plotly_chart(
-            fig_depto_region(region_sel, datos, orden_x, top_deptos, data["presup_depto"]),
+            fig_depto_region(
+                datos,
+                orden_x,
+                top_deptos,
+                data["presup_depto"],
+                titulo=f"Proyectos por estado — {region_sel}",
+                region=region_sel,
+            ),
             use_container_width=True,
         )
         if top_deptos:
             st.caption(f"Destacados en {region_sel}: **{', '.join(sorted(top_deptos))}**")
+
+        st.subheader("Departamentos críticos")
+        st.markdown(
+            f"""
+Vista agregada de los cuatro departamentos priorizados: **{", ".join(CRITICOS)}**.
+            """
+        )
+        datos_crit = data["conteo_depto"][
+            data["conteo_depto"]["Departamento"].isin(CRITICOS)
+        ].copy()
+        orden_crit = (
+            data["presup_depto"][data["presup_depto"]["Departamento"].isin(CRITICOS)]
+            .sort_values("Pct_Pais", ascending=False)["Departamento"]
+            .tolist()
+        )
+        datos_crit["Departamento"] = pd.Categorical(
+            datos_crit["Departamento"], categories=orden_crit, ordered=True
+        )
+        datos_crit = datos_crit.sort_values(["Departamento", "Estado"])
+        st.plotly_chart(
+            fig_depto_region(
+                datos_crit,
+                orden_crit,
+                set(CRITICOS),
+                data["presup_depto"],
+                titulo="Proyectos por estado — departamentos críticos",
+            ),
+            use_container_width=True,
+        )
+        st.caption(
+            f"Etiquetas de presupuesto en: **{', '.join(CRITICOS)}**. "
+            "Retrasados en rojo; demás estados en gris."
+        )
+
+        st.subheader("Crecimiento acumulado de proyectos")
+        st.markdown(
+            """
+Serie mensual acumulada por departamento (fecha de inicio). Los **cuatro críticos** resaltados
+a color; el resto en gris claro.
+            """
+        )
+        st.plotly_chart(
+            fig_acumulado_proyectos_departamento(data["acum_depto"]),
+            use_container_width=True,
+        )
+        tot_crit = (
+            data["acum_depto"][data["acum_depto"]["Es_Critico"]]
+            .sort_values("Fecha")
+            .groupby("Departamento", observed=True)["Acumulado"]
+            .last()
+        )
+        st.caption(
+            "Críticos al cierre del periodo: "
+            + " · ".join(f"**{d}** {int(tot_crit[d])}" for d in tot_crit.index)
+        )
 
     elif seccion.startswith("3"):
         st.header("¿En qué sectores se concentra el gasto y el retraso?")
@@ -170,7 +235,8 @@ En cada gráfico, los **dos departamentos con mayor % de retrasos** se muestran 
         st.pyplot(fig_dep)
         plt.close(fig_dep)
         st.caption(
-            "Borde rojo: Meta, Magdalena, Atlántico, Bogotá D.C. Color = % proyectos retrasados."
+            "Borde rojo: Meta, Magdalena, Atlántico, Bogotá D.C. "
+            "Color = nivel de retrasos (Bajo / Medio / Alto por terciles del % retrasado)."
         )
 
     else:

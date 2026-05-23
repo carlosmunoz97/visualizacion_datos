@@ -9,26 +9,34 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 from matplotlib.patches import Patch
+
+from data_loader import segmento_pct_retrasados
 
 from config import (
     CATEGORIA_DESTACADA_G1,
     CATEGORIA_DESTACADA_G2,
     COLOR_ALERTA,
+    COLOR_DESTACADO,
+    COLOR_DEPARTAMENTO_CRITICO,
     COLOR_ESTADO,
     COLOR_FONDO,
     COLOR_METRICA,
+    COLOR_REGION,
     COLOR_NAVY,
     COLOR_NEUTRO,
     COLOR_NEUTRO_2,
     COLOR_TEXTO,
     COLOR_TEXTO_SEC,
+    COLOR_SEGMENTO_RETRASO,
     CRITICOS,
     GRAY_ESTADO,
     GRAY_PRESUP,
     GRAY_RETASO,
     ORDEN_ESTADO_A,
     ORDEN_REGION,
+    ORDEN_SEGMENTO_RETRASO,
 )
 
 
@@ -38,6 +46,83 @@ def limpiar_ejes(ax, quitar_left: bool = False) -> None:
     if quitar_left:
         ax.spines["left"].set_visible(False)
     ax.set_axisbelow(True)
+
+
+def fig_acumulado_proyectos_region(acum: pd.DataFrame):
+    fig = px.line(
+        acum,
+        x="Fecha",
+        y="Acumulado",
+        color="Region",
+        markers=True,
+        custom_data=["Nuevos"],
+        title="Crecimiento acumulado de proyectos por región",
+        labels={"Fecha": "Mes de inicio", "Acumulado": "Proyectos acumulados"},
+        color_discrete_map=COLOR_REGION,
+        category_orders={"Region": ORDEN_REGION},
+    )
+    fig.update_traces(
+        line=dict(width=2.5),
+        marker=dict(size=7),
+        hovertemplate=(
+            "<b>%{fullData.name}</b><br>"
+            "Mes: %{x|%b %Y}<br>"
+            "Nuevos en el mes: %{customdata[0]}<br>"
+            "Acumulado: %{y}<extra></extra>"
+        ),
+    )
+    fig.update_layout(
+        height=460,
+        xaxis_title="Fecha de inicio del proyecto",
+        yaxis_title="Proyectos acumulados",
+        legend_title="Región",
+        hovermode="x unified",
+    )
+    return fig
+
+
+def fig_acumulado_proyectos_departamento(acum: pd.DataFrame):
+    fig = go.Figure()
+    deptos = list(acum["Departamento"].cat.categories)
+    otros = [d for d in deptos if d not in CRITICOS]
+    orden_trazas = otros + [d for d in CRITICOS if d in deptos]
+
+    for depto in orden_trazas:
+        sub = acum[acum["Departamento"] == depto].sort_values("Fecha")
+        critico = depto in CRITICOS
+        color = COLOR_DEPARTAMENTO_CRITICO.get(depto, COLOR_NEUTRO)
+        fig.add_trace(
+            go.Scatter(
+                x=sub["Fecha"],
+                y=sub["Acumulado"],
+                mode="lines+markers",
+                name=depto,
+                line=dict(
+                    color=color,
+                    width=3.2 if critico else 1.2,
+                ),
+                marker=dict(size=8 if critico else 4),
+                opacity=1.0 if critico else 0.35,
+                customdata=sub["Nuevos"],
+                hovertemplate=(
+                    "<b>%{fullData.name}</b><br>"
+                    "Mes: %{x|%b %Y}<br>"
+                    "Nuevos en el mes: %{customdata}<br>"
+                    "Acumulado: %{y}<extra></extra>"
+                ),
+                showlegend=critico,
+            )
+        )
+
+    fig.update_layout(
+        title="Crecimiento acumulado de proyectos por departamento",
+        height=500,
+        xaxis_title="Fecha de inicio del proyecto",
+        yaxis_title="Proyectos acumulados",
+        legend_title="Deptos críticos",
+        hovermode="x unified",
+    )
+    return fig
 
 
 def fig_treemap(treemap_df: pd.DataFrame):
@@ -64,11 +149,13 @@ def fig_treemap(treemap_df: pd.DataFrame):
 
 
 def fig_depto_region(
-    region: str,
     datos: pd.DataFrame,
     orden_x: list,
     top_deptos: set,
     presupuesto_depto: pd.DataFrame,
+    *,
+    titulo: str,
+    region: str | None = None,
 ):
     fig = px.bar(
         datos,
@@ -79,19 +166,16 @@ def fig_depto_region(
         barmode="stack",
         category_orders={"Estado": ORDEN_ESTADO_A},
         custom_data=["Pct"],
-        title=f"Proyectos por estado — {region}",
+        title=titulo,
     )
     for trace in fig.data:
         estado = trace.name
-        trace.marker.color = [
-            COLOR_ESTADO.get(estado, "#9CA3AF")
-            if dep in top_deptos
-            else GRAY_ESTADO.get(estado, "#9CA3AF")
-            for dep in trace.x
-        ]
-        trace.marker.line.color = [
-            "#0F172A" if dep in top_deptos else "rgba(0,0,0,0)" for dep in trace.x
-        ]
+        if estado == "Retrasado":
+            trace.marker.color = COLOR_ALERTA
+            trace.marker.line.color = "rgba(0,0,0,0)"
+        else:
+            trace.marker.color = GRAY_ESTADO.get(estado, "#9CA3AF")
+            trace.marker.line.color = "rgba(0,0,0,0)"
     fig.update_traces(
         hovertemplate=(
             "<b>%{x}</b><br>Estado: %{fullData.name}<br>"
@@ -102,20 +186,24 @@ def fig_depto_region(
     for depto in top_deptos:
         if depto not in totales.index:
             continue
-        pct_pais = presupuesto_depto.loc[
-            (presupuesto_depto["Region"] == region)
-            & (presupuesto_depto["Departamento"] == depto),
-            "Pct_Pais",
-        ].iloc[0]
+        mask = presupuesto_depto["Departamento"] == depto
+        if region is not None:
+            mask = mask & (presupuesto_depto["Region"] == region)
+        pct_pais = presupuesto_depto.loc[mask, "Pct_Pais"].iloc[0]
         fig.add_annotation(
             x=depto,
             y=totales[depto],
-            text=f"Presup.<br>{pct_pais:.2f}% país",
+            text=f"<b>Presupuesto</b><br>{pct_pais:.2f}% del país",
             showarrow=True,
             arrowhead=2,
-            ay=-30,
-            font=dict(size=10, color="#0F172A"),
-            bgcolor="rgba(255,255,255,0.85)",
+            arrowcolor=COLOR_NAVY,
+            arrowwidth=1.5,
+            ay=-42,
+            font=dict(size=13, color=COLOR_NAVY, family="Arial Black, Arial, sans-serif"),
+            bgcolor="rgba(255,255,255,0.95)",
+            bordercolor=COLOR_DESTACADO,
+            borderwidth=2,
+            borderpad=6,
         )
     ticktext = [f"<b>{d}</b>" if d in top_deptos else d for d in orden_x]
     fig.update_xaxes(tickmode="array", tickvals=orden_x, ticktext=ticktext, tickangle=-35)
@@ -219,27 +307,53 @@ def fig_sector_criticos(cat_criticos: pd.DataFrame, orden_cat: list):
 
 def fig_sector_depto(cat_por_critico: pd.DataFrame, depto: str):
     t = cat_por_critico[cat_por_critico["Departamento"] == depto].copy()
-    t = t.sort_values("Pct_Retrasados", ascending=False)
-    orden_cats = t["Categoria"].tolist()
-    t["Categoria"] = pd.Categorical(t["Categoria"], categories=orden_cats, ordered=True)
-    fig = px.bar(
-        t,
-        x="Pct_Retrasados",
-        y="Categoria",
-        color="Pct_Presup_Depto",
-        orientation="h",
-        title=f"{depto} — % retrasados (arriba = mayor) | color = % presup. del depto",
-        color_continuous_scale=["#DBEAFE", "#2563EB"],
-        text=t["Pct_Retrasados"].round(1),
+    t["Pareja"] = t["Pct_Presup_Depto"] + t["Pct_Retrasados"]
+    cat_destacada = t.loc[t["Pareja"].idxmax(), "Categoria"]
+    orden_cats = t.sort_values("Pct_Retrasados", ascending=False)["Categoria"].tolist()
+    cat_plot = t.melt(
+        id_vars=["Categoria"],
+        value_vars=["Pct_Presup_Depto", "Pct_Retrasados"],
+        var_name="Metrica",
+        value_name="Porcentaje",
     )
+    cat_plot["Metrica"] = cat_plot["Metrica"].map(
+        {
+            "Pct_Presup_Depto": "% presupuesto del departamento",
+            "Pct_Retrasados": "% proyectos retrasados",
+        }
+    )
+    fig = px.bar(
+        cat_plot,
+        x="Categoria",
+        y="Porcentaje",
+        color="Metrica",
+        barmode="group",
+        text=cat_plot["Porcentaje"].round(1),
+        title=(
+            f"{depto}: presupuesto y retrasos por categoría "
+            f"(resaltado: {cat_destacada}, mayor pareja presup. + % retrasos)"
+        ),
+        color_discrete_map={
+            "% presupuesto del departamento": "#2563EB",
+            "% proyectos retrasados": "#DC2626",
+        },
+        category_orders={"Categoria": orden_cats},
+    )
+    for trace in fig.data:
+        if "presupuesto" in trace.name:
+            color_activo, gray = "#2563EB", GRAY_PRESUP
+        else:
+            color_activo, gray = "#DC2626", GRAY_RETASO
+        trace.marker.color = [
+            color_activo if cat == cat_destacada else gray for cat in trace.x
+        ]
     fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
-    fig.update_yaxes(categoryorder="array", categoryarray=orden_cats, autorange="reversed")
-    fig.update_layout(
-        height=380,
-        margin=dict(t=50, l=120, r=50, b=40),
-        xaxis_title="% proyectos retrasados",
-        yaxis_title="",
-        coloraxis_colorbar_title="% presup. departamento",
+    fig.update_layout(height=480, yaxis_title="Porcentaje (%)", legend_title="")
+    cats = list(fig.data[0].x)
+    fig.update_xaxes(
+        tickmode="array",
+        tickvals=cats,
+        ticktext=[f"<b>{c}</b>" if c == cat_destacada else c for c in cats],
     )
     return fig
 
@@ -247,7 +361,6 @@ def fig_sector_depto(cat_por_critico: pd.DataFrame, depto: str):
 def fig_scatter_regional(resumen_reg: pd.DataFrame) -> plt.Figure:
     plot_region = resumen_reg.copy()
     mediana_presupuesto = plot_region["Presupuesto_Millones_USD"].median()
-    mediana_eficiencia = plot_region["Beneficiarios_por_Millon_USD"].median()
     regiones_alto = plot_region[plot_region["Presupuesto_Millones_USD"] >= mediana_presupuesto]
     region_critica = regiones_alto.sort_values("Beneficiarios_por_Millon_USD").iloc[0]
     nombre_region_critica = region_critica["Region"]
@@ -271,14 +384,6 @@ def fig_scatter_regional(resumen_reg: pd.DataFrame) -> plt.Figure:
     ax.set_xlim(x_lim_inf, x_lim_sup)
     ax.set_ylim(y_lim_inf, y_lim_sup)
 
-    ax.fill_between(
-        [mediana_presupuesto, x_lim_sup],
-        y1=y_lim_inf,
-        y2=mediana_eficiencia,
-        color=COLOR_ALERTA,
-        alpha=0.08,
-        zorder=0,
-    )
     ax.scatter(
         plot_region["Presupuesto_Millones_USD"],
         plot_region["Beneficiarios_por_Millon_USD"],
@@ -289,9 +394,6 @@ def fig_scatter_regional(resumen_reg: pd.DataFrame) -> plt.Figure:
         alpha=0.9,
         zorder=3,
     )
-    ax.axvline(mediana_presupuesto, color=COLOR_TEXTO_SEC, linestyle="--", linewidth=1, alpha=0.6, zorder=1)
-    ax.axhline(mediana_eficiencia, color=COLOR_TEXTO_SEC, linestyle="--", linewidth=1, alpha=0.6, zorder=1)
-
     offsets = {
         "Caribe": (14, 8),
         "Amazonía": (14, 8),
@@ -336,15 +438,6 @@ def fig_scatter_regional(resumen_reg: pd.DataFrame) -> plt.Figure:
         bbox=dict(boxstyle="round,pad=0.4", fc="white", ec=COLOR_ALERTA, lw=1.2),
         zorder=5,
     )
-    ax.text(
-        mediana_presupuesto + x_rango * 0.06,
-        mediana_eficiencia - y_rango * 0.18,
-        "Zona de riesgo",
-        fontsize=10.5,
-        color=COLOR_ALERTA,
-        fontweight="bold",
-        alpha=0.85,
-    )
     ax.set_xlabel("Presupuesto total asignado (millones de USD)", fontsize=11, color=COLOR_TEXTO)
     ax.set_ylabel("Beneficiarios por millón de USD", fontsize=11, color=COLOR_TEXTO)
     ax.xaxis.set_major_formatter(mtick.StrMethodFormatter("{x:,.0f}"))
@@ -356,7 +449,6 @@ def fig_scatter_regional(resumen_reg: pd.DataFrame) -> plt.Figure:
         handles=[
             Patch(facecolor=COLOR_NEUTRO, edgecolor="white", label="Regiones"),
             Patch(facecolor=COLOR_ALERTA, edgecolor="white", label="Región crítica (cobertura)"),
-            Patch(facecolor=COLOR_ALERTA, alpha=0.15, label="Zona de riesgo"),
         ],
         loc="lower right",
         fontsize=9,
@@ -368,25 +460,31 @@ def fig_scatter_regional(resumen_reg: pd.DataFrame) -> plt.Figure:
 
 def fig_scatter_departamental(resumen_dep: pd.DataFrame) -> plt.Figure:
     plot_depto = resumen_dep.copy()
-    med_p = plot_depto["Pct_Pais"].median()
-    med_b = plot_depto["Beneficiarios_por_Millon_USD"].median()
+    if "Segmento_Retraso" not in plot_depto.columns:
+        plot_depto["Segmento_Retraso"] = segmento_pct_retrasados(
+            plot_depto["Pct_Retrasados"]
+        )
 
     fig, ax = plt.subplots(figsize=(12.5, 7.2), facecolor=COLOR_FONDO)
     ax.set_facecolor(COLOR_FONDO)
 
-    scatter = ax.scatter(
-        plot_depto["Pct_Pais"],
-        plot_depto["Beneficiarios_por_Millon_USD"],
-        c=plot_depto["Pct_Retrasados"],
-        s=plot_depto["Proyectos"] * 2.8 + 35,
-        cmap="RdYlGn_r",
-        vmin=0,
-        vmax=max(plot_depto["Pct_Retrasados"].max(), 1),
-        alpha=0.88,
-        edgecolors="white",
-        linewidth=0.7,
-        zorder=3,
-    )
+    for seg in ORDEN_SEGMENTO_RETRASO:
+        sub = plot_depto[plot_depto["Segmento_Retraso"] == seg]
+        if sub.empty:
+            continue
+        lo = sub["Pct_Retrasados"].min()
+        hi = sub["Pct_Retrasados"].max()
+        ax.scatter(
+            sub["Pct_Pais"],
+            sub["Beneficiarios_por_Millon_USD"],
+            c=COLOR_SEGMENTO_RETRASO[seg],
+            s=sub["Proyectos"] * 2.8 + 35,
+            alpha=0.88,
+            edgecolors="white",
+            linewidth=0.7,
+            zorder=3,
+            label=f"{seg} ({lo:.1f}-{hi:.1f} %)",
+        )
 
     for _, row in plot_depto.iterrows():
         if row["Departamento"] not in CRITICOS:
@@ -411,28 +509,15 @@ def fig_scatter_departamental(resumen_dep: pd.DataFrame) -> plt.Figure:
             zorder=6,
         )
 
-    cbar = fig.colorbar(scatter, ax=ax, shrink=0.78, pad=0.02)
-    cbar.set_label("% proyectos retrasados", fontsize=9)
-    ax.axvline(med_p, color=COLOR_TEXTO_SEC, linestyle="--", linewidth=1, alpha=0.55, zorder=1)
-    ax.axhline(med_b, color=COLOR_TEXTO_SEC, linestyle="--", linewidth=1, alpha=0.55, zorder=1)
-    ax.fill_between(
-        [med_p, plot_depto["Pct_Pais"].max() * 1.06],
-        plot_depto["Beneficiarios_por_Millon_USD"].min() * 0.92,
-        med_b,
-        color=COLOR_ALERTA,
-        alpha=0.07,
-        zorder=0,
-    )
-    ax.text(
-        med_p + (plot_depto["Pct_Pais"].max() - med_p) * 0.05,
-        med_b - (plot_depto["Beneficiarios_por_Millon_USD"].max() - med_b) * 0.12,
-        "Zona de riesgo",
-        fontsize=10,
-        color=COLOR_ALERTA,
-        fontweight="bold",
+    ax.legend(
+        title="% proyectos retrasados",
+        loc="upper right",
+        frameon=True,
+        fontsize=9,
+        title_fontsize=9,
     )
     ax.set_title(
-        "Departamentos: % presupuesto nacional vs cobertura (color = % retrasos)",
+        "Departamentos: % presupuesto nacional vs cobertura (color = nivel de retrasos)",
         loc="left",
         fontsize=14.5,
         fontweight="bold",

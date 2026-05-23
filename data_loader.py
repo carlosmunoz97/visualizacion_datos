@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from config import CRITICOS, DATA_PATH, ORDEN_ESTADO_A
+from config import CRITICOS, DATA_PATH, ORDEN_ESTADO_A, ORDEN_REGION, ORDEN_SEGMENTO_RETRASO
 
 
 def load_raw() -> pd.DataFrame:
@@ -21,6 +21,60 @@ def build_analitico(df: pd.DataFrame) -> pd.DataFrame:
         out["Poblacion_Beneficiada"] / out["Presupuesto_Millones_USD"].replace(0, pd.NA)
     )
     return out
+
+
+def acumulado_proyectos_por_region(df: pd.DataFrame) -> pd.DataFrame:
+    """Proyectos nuevos y acumulados por mes y región (según Fecha_Inicio)."""
+    d = df.dropna(subset=["Fecha_Inicio"]).copy()
+    d["Mes"] = d["Fecha_Inicio"].dt.to_period("M")
+    nuevos = (
+        d.groupby(["Mes", "Region"], observed=True)
+        .size()
+        .reset_index(name="Nuevos")
+    )
+    meses = pd.period_range(d["Mes"].min(), d["Mes"].max(), freq="M")
+    grid = pd.MultiIndex.from_product([meses, ORDEN_REGION], names=["Mes", "Region"])
+    out = pd.DataFrame(index=grid).reset_index()
+    out = out.merge(nuevos, on=["Mes", "Region"], how="left")
+    out["Nuevos"] = out["Nuevos"].fillna(0).astype(int)
+    out["Fecha"] = out["Mes"].dt.to_timestamp()
+    out = out.sort_values(["Region", "Fecha"])
+    out["Acumulado"] = out.groupby("Region", observed=True)["Nuevos"].cumsum()
+    out["Region"] = pd.Categorical(out["Region"], categories=ORDEN_REGION, ordered=True)
+    return out.sort_values(["Fecha", "Region"])
+
+
+def acumulado_proyectos_por_departamento(df: pd.DataFrame) -> pd.DataFrame:
+    """Proyectos nuevos y acumulados por mes y departamento (según Fecha_Inicio)."""
+    d = df.dropna(subset=["Fecha_Inicio"]).copy()
+    d["Mes"] = d["Fecha_Inicio"].dt.to_period("M")
+    nuevos = (
+        d.groupby(["Mes", "Departamento"], observed=True)
+        .size()
+        .reset_index(name="Nuevos")
+    )
+    deptos = sorted(d["Departamento"].unique())
+    meses = pd.period_range(d["Mes"].min(), d["Mes"].max(), freq="M")
+    grid = pd.MultiIndex.from_product([meses, deptos], names=["Mes", "Departamento"])
+    out = pd.DataFrame(index=grid).reset_index()
+    out = out.merge(nuevos, on=["Mes", "Departamento"], how="left")
+    out["Nuevos"] = out["Nuevos"].fillna(0).astype(int)
+    out["Fecha"] = out["Mes"].dt.to_timestamp()
+    out = out.sort_values(["Departamento", "Fecha"])
+    out["Acumulado"] = out.groupby("Departamento", observed=True)["Nuevos"].cumsum()
+    out["Es_Critico"] = out["Departamento"].isin(CRITICOS)
+    presup = presupuesto_depto(df)
+    orden_crit = (
+        presup[presup["Departamento"].isin(CRITICOS)]
+        .sort_values("Pct_Pais", ascending=False)["Departamento"]
+        .tolist()
+    )
+    orden_otros = sorted(set(deptos) - set(CRITICOS))
+    orden_depto = orden_crit + orden_otros
+    out["Departamento"] = pd.Categorical(
+        out["Departamento"], categories=orden_depto, ordered=True
+    )
+    return out.sort_values(["Fecha", "Departamento"])
 
 
 def resumen_region(df: pd.DataFrame) -> pd.DataFrame:
@@ -131,6 +185,12 @@ def tablas_sector(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.Data
     return cat_nacional, cat_criticos, cat_por_critico
 
 
+def segmento_pct_retrasados(pct: pd.Series) -> pd.Series:
+    """Terciles del % de proyectos retrasados: Bajo / Medio / Alto."""
+    ranked = pct.rank(method="first")
+    return pd.qcut(ranked, q=3, labels=ORDEN_SEGMENTO_RETRASO)
+
+
 def resumen_departamentos(df: pd.DataFrame) -> pd.DataFrame:
     r = (
         df.groupby(["Region", "Departamento"], as_index=False)
@@ -148,6 +208,7 @@ def resumen_departamentos(df: pd.DataFrame) -> pd.DataFrame:
     r["Beneficiarios_por_Millon_USD"] = (
         r["Poblacion_Beneficiada"] / r["Presupuesto_Millones_USD"].replace(0, pd.NA)
     )
+    r["Segmento_Retraso"] = segmento_pct_retrasados(r["Pct_Retrasados"])
     return r
 
 
