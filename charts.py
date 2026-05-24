@@ -147,6 +147,220 @@ def fig_treemap(treemap_df: pd.DataFrame):
     fig.update_traces(textinfo="label+percent root", textfont=dict(color="white", size=11))
     return fig
 
+def fig_presupuesto_departamentos_atencion(treemap_df: pd.DataFrame):
+    """Barras verticales: presupuesto por departamento con jerarquía visual en grises."""
+
+    plot_df = treemap_df.copy()
+
+    plot_df["Presupuesto_Millones_USD"] = (
+        plot_df["Presupuesto_USD"] / 1_000_000
+    )
+
+    plot_df["Region"] = pd.Categorical(
+        plot_df["Region"],
+        categories=ORDEN_REGION,
+        ordered=True,
+    )
+
+    plot_df = plot_df.sort_values(
+        ["Region", "Pct_Pais"],
+        ascending=[True, False],
+    ).copy()
+
+    # Ranking dentro de cada región
+    plot_df["Rank_Region"] = (
+        plot_df.groupby("Region", observed=True)["Pct_Pais"]
+        .rank(method="first", ascending=False)
+        .astype(int)
+    )
+
+    COLOR_TOP_1 = "#374151"
+    COLOR_TOP_2 = "#6B7280"
+    COLOR_TOP_3 = "#9CA3AF"
+    COLOR_RESTO = "#E5E7EB"
+
+    COLOR_TEXTO = "#0F172A"
+    COLOR_TEXTO_SUAVE = "#9CA3AF"
+    COLOR_SEC = "#64748B"
+    COLOR_EJE = "#94A3B8"
+    COLOR_GRID = "#EEF2F6"
+
+    plot_df["Color"] = np.select(
+        [
+            plot_df["Rank_Region"] == 1,
+            plot_df["Rank_Region"] == 2,
+            plot_df["Rank_Region"] == 3,
+        ],
+        [
+            COLOR_TOP_1,
+            COLOR_TOP_2,
+            COLOR_TOP_3,
+        ],
+        default=COLOR_RESTO,
+    )
+
+    plot_df["Texto_Barra"] = plot_df["Pct_Pais"].map(lambda x: f"{x:.1f}%")
+
+    plot_df["Color_Texto_Barra"] = np.select(
+        [
+            plot_df["Rank_Region"] == 1,
+            plot_df["Rank_Region"] == 2,
+            plot_df["Rank_Region"] == 3,
+        ],
+        [
+            COLOR_TOP_1,
+            COLOR_TOP_2,
+            COLOR_TOP_3,
+        ],
+        default=COLOR_TEXTO_SUAVE,
+    )
+
+    x_pos = []
+    x_labels = []
+    separadores = []
+    region_centers = {}
+
+    pos = 0
+    gap = 1.5
+    indices_ordenados = []
+
+    for region in ORDEN_REGION:
+        sub = plot_df[plot_df["Region"] == region]
+
+        if sub.empty:
+            continue
+
+        posiciones_region = []
+
+        for idx, row in sub.iterrows():
+            x_pos.append(pos)
+            indices_ordenados.append(idx)
+
+            if row["Rank_Region"] == 1:
+                x_labels.append(f"<b>{row['Departamento']}</b>")
+            elif row["Rank_Region"] == 2:
+                x_labels.append(
+                    f"<span style='color:#4B5563'>{row['Departamento']}</span>"
+                )
+            else:
+                x_labels.append(
+                    f"<span style='color:#9CA3AF'>{row['Departamento']}</span>"
+                )
+
+            posiciones_region.append(pos)
+            pos += 1
+
+        region_centers[region] = sum(posiciones_region) / len(posiciones_region)
+        separadores.append(pos - 0.5 + gap / 2)
+        pos += gap
+
+    plot_df = plot_df.loc[indices_ordenados].copy()
+    plot_df["x_pos"] = x_pos
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Bar(
+            x=plot_df["x_pos"],
+            y=plot_df["Pct_Pais"],
+            marker=dict(
+                color=plot_df["Color"],
+                line=dict(color="white", width=0.5),
+            ),
+            text=plot_df["Texto_Barra"],
+            textposition="outside",
+            textfont=dict(
+                size=9,
+                color=plot_df["Color_Texto_Barra"],
+                family="Arial, sans-serif",
+            ),
+            cliponaxis=False,
+            customdata=plot_df[
+                [
+                    "Region",
+                    "Departamento",
+                    "Presupuesto_Millones_USD",
+                    "Proyectos",
+                    "Pct_Pais",
+                    "Rank_Region",
+                ]
+            ],
+            hovertemplate=(
+                "<b>%{customdata[1]}</b><br>"
+                "Región: %{customdata[0]}<br>"
+                "Posición regional: %{customdata[5]}<br>"
+                "% presupuesto nacional: %{customdata[4]:.2f}%<br>"
+                "Presupuesto: USD %{customdata[2]:,.1f} M<br>"
+                "Proyectos: %{customdata[3]}"
+                "<extra></extra>"
+            ),
+        )
+    )
+
+    for sep in separadores[:-1]:
+        fig.add_vline(
+            x=sep,
+            line_width=1,
+            line_dash="dot",
+            line_color="#D6DEE6",
+        )
+
+    max_y = plot_df["Pct_Pais"].max()
+
+    for region, center in region_centers.items():
+        fig.add_annotation(
+            x=center,
+            y=max_y * 1.27,
+            text=f"<b>{region}</b>",
+            showarrow=False,
+            font=dict(size=11, color=COLOR_SEC),
+        )
+
+    fig.update_layout(
+        title=dict(
+            text="<b>Participación del presupuesto nacional por departamento</b>",
+            x=0.02,
+            y=0.96,
+            font=dict(size=20, color=COLOR_TEXTO),
+        ),
+        height=680,
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        showlegend=False,
+        bargap=0.18,
+        margin=dict(t=120, l=75, r=45, b=150),
+    )
+
+    fig.update_xaxes(
+        title_text="Departamento",
+        tickmode="array",
+        tickvals=plot_df["x_pos"],
+        ticktext=x_labels,
+        tickangle=-45,
+        showline=True,
+        linecolor=COLOR_EJE,
+        linewidth=1,
+        ticks="outside",
+        tickcolor=COLOR_EJE,
+        ticklen=5,
+        zeroline=False,
+    )
+
+    fig.update_yaxes(
+        title_text="% del presupuesto nacional",
+        ticksuffix="%",
+        gridcolor=COLOR_GRID,
+        zeroline=False,
+        showline=True,
+        linecolor=COLOR_EJE,
+        linewidth=1,
+        ticks="outside",
+        tickcolor=COLOR_EJE,
+        ticklen=5,
+        range=[0, max_y * 1.38],
+    )
+
+    return fig
 
 def fig_depto_region(
     datos: pd.DataFrame,
@@ -157,62 +371,80 @@ def fig_depto_region(
     titulo: str,
     region: str | None = None,
 ):
+    color_estado_visual = {
+        "En Planeación": "#D1D5DB",
+        "En Ejecución": "#9CA3AF",
+        "Finalizado": "#6B7280",
+        "Retrasado": COLOR_ALERTA,
+    }
+
     fig = px.bar(
         datos,
         x="Departamento",
         y="Proyectos",
         color="Estado",
-        color_discrete_map=COLOR_ESTADO,
+        color_discrete_map=color_estado_visual,
         barmode="stack",
         category_orders={"Estado": ORDEN_ESTADO_A},
         custom_data=["Pct"],
         title=titulo,
     )
+
     for trace in fig.data:
         estado = trace.name
+
         if estado == "Retrasado":
             trace.marker.color = COLOR_ALERTA
-            trace.marker.line.color = "rgba(0,0,0,0)"
         else:
-            trace.marker.color = GRAY_ESTADO.get(estado, "#9CA3AF")
-            trace.marker.line.color = "rgba(0,0,0,0)"
+            trace.marker.color = color_estado_visual.get(estado, "#9CA3AF")
+
+        trace.marker.line.color = "rgba(0,0,0,0)"
+        trace.marker.line.width = 0
+
     fig.update_traces(
         hovertemplate=(
-            "<b>%{x}</b><br>Estado: %{fullData.name}<br>"
-            "Proyectos: %{y}<br>Participación: %{customdata[0]:.1f}%<extra></extra>"
+            "<b>%{x}</b><br>"
+            "Estado: %{fullData.name}<br>"
+            "Proyectos: %{y}<br>"
+            "Participación dentro del departamento: %{customdata[0]:.1f}%"
+            "<extra></extra>"
         )
     )
-    totales = datos.groupby("Departamento", observed=True)["Proyectos"].sum()
-    for depto in top_deptos:
-        if depto not in totales.index:
-            continue
-        mask = presupuesto_depto["Departamento"] == depto
-        if region is not None:
-            mask = mask & (presupuesto_depto["Region"] == region)
-        pct_pais = presupuesto_depto.loc[mask, "Pct_Pais"].iloc[0]
-        fig.add_annotation(
-            x=depto,
-            y=totales[depto],
-            text=f"<b>Presupuesto</b><br>{pct_pais:.2f}% del país",
-            showarrow=True,
-            arrowhead=2,
-            arrowcolor=COLOR_NAVY,
-            arrowwidth=1.5,
-            ay=-42,
-            font=dict(size=13, color=COLOR_NAVY, family="Arial Black, Arial, sans-serif"),
-            bgcolor="rgba(255,255,255,0.95)",
-            bordercolor=COLOR_DESTACADO,
-            borderwidth=2,
-            borderpad=6,
-        )
-    ticktext = [f"<b>{d}</b>" if d in top_deptos else d for d in orden_x]
-    fig.update_xaxes(tickmode="array", tickvals=orden_x, ticktext=ticktext, tickangle=-35)
+
+    ticktext = [
+        f"<b>{d}</b>" if d in top_deptos else d
+        for d in orden_x
+    ]
+
+    fig.update_xaxes(
+        tickmode="array",
+        tickvals=orden_x,
+        ticktext=ticktext,
+        tickangle=-35,
+        showline=True,
+        linecolor="#94A3B8",
+        ticks="outside",
+    )
+
+    fig.update_yaxes(
+        title_text="Número de proyectos",
+        gridcolor="#EEF2F6",
+        zeroline=False,
+        showline=True,
+        linecolor="#94A3B8",
+        ticks="outside",
+    )
+
     fig.update_layout(
         height=450,
         xaxis_title="Departamento",
         yaxis_title="Número de proyectos",
         legend_title="Estado",
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        margin=dict(t=70, l=60, r=30, b=100),
     )
+
     return fig
 
 
@@ -223,12 +455,17 @@ def fig_sector_nacional(cat_nacional: pd.DataFrame, orden_cat: list):
         var_name="Metrica",
         value_name="Porcentaje",
     )
+
     cat_plot["Metrica"] = cat_plot["Metrica"].map(
         {
             "Pct_Presup_Pais": "% presupuesto nacional",
             "Pct_Retrasados": "% proyectos retrasados",
         }
     )
+
+    color_presup = COLOR_METRICA["% presupuesto nacional"]
+    color_retraso = COLOR_METRICA["% proyectos retrasados"]
+
     fig = px.bar(
         cat_plot,
         x="Categoria",
@@ -236,26 +473,114 @@ def fig_sector_nacional(cat_nacional: pd.DataFrame, orden_cat: list):
         color="Metrica",
         barmode="group",
         text=cat_plot["Porcentaje"].round(1),
-        title="Nacional: presupuesto y retrasos por categoría (Energía resaltada)",
+        title="Nacional: presupuesto y retrasos por categoría",
         color_discrete_map=COLOR_METRICA,
         category_orders={"Categoria": orden_cat},
     )
+
     for trace in fig.data:
         if "presupuesto" in trace.name:
-            color_activo, gray = COLOR_METRICA["% presupuesto nacional"], GRAY_PRESUP
+            color_activo = color_presup
+            color_contexto = GRAY_PRESUP
         else:
-            color_activo, gray = COLOR_METRICA["% proyectos retrasados"], GRAY_RETASO
+            color_activo = color_retraso
+            color_contexto = GRAY_RETASO
+
         trace.marker.color = [
-            color_activo if cat == CATEGORIA_DESTACADA_G1 else gray for cat in trace.x
+            color_activo if cat == CATEGORIA_DESTACADA_G1 else color_contexto
+            for cat in trace.x
         ]
-    fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
-    fig.update_layout(height=480, yaxis_title="Porcentaje (%)", legend_title="")
+
+    fig.update_traces(
+        texttemplate="%{text:.1f}%",
+        textposition="outside",
+        cliponaxis=False,
+    )
+
+    # Leyenda horizontal manual
+    fig.add_shape(
+        type="rect",
+        xref="paper",
+        yref="paper",
+        x0=0.02,
+        x1=0.045,
+        y0=1.08,
+        y1=1.12,
+        fillcolor=color_presup,
+        line=dict(width=0),
+    )
+
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.05,
+        y=1.10,
+        text="% presupuesto nacional",
+        showarrow=False,
+        xanchor="left",
+        yanchor="middle",
+        font=dict(size=12, color="#0F172A"),
+    )
+
+    fig.add_shape(
+        type="rect",
+        xref="paper",
+        yref="paper",
+        x0=0.31,
+        x1=0.335,
+        y0=1.08,
+        y1=1.12,
+        fillcolor=color_retraso,
+        line=dict(width=0),
+    )
+
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.34,
+        y=1.10,
+        text="% proyectos retrasados",
+        showarrow=False,
+        xanchor="left",
+        yanchor="middle",
+        font=dict(size=12, color="#0F172A"),
+    )
+
     cats = list(fig.data[0].x)
+
     fig.update_xaxes(
+        title_text="Categoría",
         tickmode="array",
         tickvals=cats,
-        ticktext=[f"<b>{c}</b>" if c == CATEGORIA_DESTACADA_G1 else c for c in cats],
+        ticktext=[
+            f"<b>{c}</b>" if c == CATEGORIA_DESTACADA_G1 else c
+            for c in cats
+        ],
+        showline=True,
+        linecolor="#94A3B8",
+        ticks="outside",
     )
+
+    fig.update_yaxes(
+        title_text="Porcentaje (%)",
+        ticksuffix="%",
+        gridcolor="#EEF2F6",
+        zeroline=False,
+        showline=True,
+        linecolor="#94A3B8",
+        ticks="outside",
+    )
+
+    fig.update_layout(
+        height=520,
+        yaxis_title="Porcentaje (%)",
+        xaxis_title="Categoría",
+        showlegend=False,
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        margin=dict(t=120, l=60, r=40, b=80),
+    )
+
     return fig
 
 
@@ -266,12 +591,22 @@ def fig_sector_criticos(cat_criticos: pd.DataFrame, orden_cat: list):
         var_name="Metrica",
         value_name="Porcentaje",
     )
+
     cat_plot2["Metrica"] = cat_plot2["Metrica"].map(
         {
-            "Pct_Presup_Criticos": "% presupuesto (deptos críticos)",
+            "Pct_Presup_Criticos": "% presupuesto en deptos críticos",
             "Pct_Retrasados": "% proyectos retrasados",
         }
     )
+
+    color_presup = "#2563EB"
+    color_retraso = "#DC2626"
+
+    color_metrica_g2 = {
+        "% presupuesto en deptos críticos": color_presup,
+        "% proyectos retrasados": color_retraso,
+    }
+
     fig = px.bar(
         cat_plot2,
         x="Categoria",
@@ -279,29 +614,114 @@ def fig_sector_criticos(cat_criticos: pd.DataFrame, orden_cat: list):
         color="Metrica",
         barmode="group",
         text=cat_plot2["Porcentaje"].round(1),
-        title="Deptos críticos (agregado): presupuesto y retrasos (Infraestructura resaltada)",
-        color_discrete_map={
-            "% presupuesto (deptos críticos)": "#2563EB",
-            "% proyectos retrasados": "#DC2626",
-        },
+        title="Departamentos críticos: presupuesto y retrasos por categoría",
+        color_discrete_map=color_metrica_g2,
         category_orders={"Categoria": orden_cat},
     )
+
     for trace in fig.data:
         if "presupuesto" in trace.name:
-            color_activo, gray = "#2563EB", GRAY_PRESUP
+            color_activo = color_presup
+            color_contexto = GRAY_PRESUP
         else:
-            color_activo, gray = "#DC2626", GRAY_RETASO
+            color_activo = color_retraso
+            color_contexto = GRAY_RETASO
+
         trace.marker.color = [
-            color_activo if cat == CATEGORIA_DESTACADA_G2 else gray for cat in trace.x
+            color_activo if cat == CATEGORIA_DESTACADA_G2 else color_contexto
+            for cat in trace.x
         ]
-    fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
-    fig.update_layout(height=480, yaxis_title="Porcentaje (%)", legend_title="")
+
+    fig.update_traces(
+        texttemplate="%{text:.1f}%",
+        textposition="outside",
+        cliponaxis=False,
+    )
+
+    # Leyenda horizontal manual
+    fig.add_shape(
+        type="rect",
+        xref="paper",
+        yref="paper",
+        x0=0.02,
+        x1=0.045,
+        y0=1.08,
+        y1=1.12,
+        fillcolor=color_presup,
+        line=dict(width=0),
+    )
+
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.05,
+        y=1.10,
+        text="% presupuesto en deptos críticos",
+        showarrow=False,
+        xanchor="left",
+        yanchor="middle",
+        font=dict(size=12, color="#0F172A"),
+    )
+
+    fig.add_shape(
+        type="rect",
+        xref="paper",
+        yref="paper",
+        x0=0.38,
+        x1=0.405,
+        y0=1.08,
+        y1=1.12,
+        fillcolor=color_retraso,
+        line=dict(width=0),
+    )
+
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.41,
+        y=1.10,
+        text="% proyectos retrasados",
+        showarrow=False,
+        xanchor="left",
+        yanchor="middle",
+        font=dict(size=12, color="#0F172A"),
+    )
+
     cats2 = list(fig.data[0].x)
+
     fig.update_xaxes(
+        title_text="Categoría",
         tickmode="array",
         tickvals=cats2,
-        ticktext=[f"<b>{c}</b>" if c == CATEGORIA_DESTACADA_G2 else c for c in cats2],
+        ticktext=[
+            f"<b>{c}</b>" if c == CATEGORIA_DESTACADA_G2 else c
+            for c in cats2
+        ],
+        showline=True,
+        linecolor="#94A3B8",
+        ticks="outside",
     )
+
+    fig.update_yaxes(
+        title_text="Porcentaje (%)",
+        ticksuffix="%",
+        gridcolor="#EEF2F6",
+        zeroline=False,
+        showline=True,
+        linecolor="#94A3B8",
+        ticks="outside",
+    )
+
+    fig.update_layout(
+        height=520,
+        yaxis_title="Porcentaje (%)",
+        xaxis_title="Categoría",
+        showlegend=False,
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        margin=dict(t=120, l=60, r=40, b=80),
+    )
+
     return fig
 
 
