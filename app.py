@@ -18,6 +18,7 @@ from charts import (
     fig_sector_criticos,
     fig_sector_depto,
     fig_sector_nacional,
+    fig_treemap,
 )
 from config import CRITICOS, ORDEN_REGION
 from data_loader import (
@@ -88,20 +89,48 @@ def main():
 
     if seccion.startswith("1"):
         st.header("¿Dónde está el presupuesto?")
+    
         st.markdown(
             """
-**Pregunta:** ¿Cómo se distribuye el presupuesto entre regiones y departamentos?
-
-**Lectura esperada:** Las cinco regiones están parejas (~18–22 %); el detalle relevante está en departamentos como **Meta**, **Amazonas** y **Caquetá**.
+    **Pregunta:** ¿Qué departamentos concentran mayor participación del presupuesto nacional?
+    
+    **Lectura esperada:** La primera visualización conserva todos los departamentos y guía la atención mediante ordenamiento y contraste tonal.  
+    El treemap se mantiene como vista complementaria para observar la composición regional y departamental del presupuesto.
             """
         )
-        st.plotly_chart(
-            fig_presupuesto_departamentos_atencion(data["treemap"]),
-            use_container_width=True,
+    
+        tab1, tab2 = st.tabs(
+            [
+                "Recorrido visual por departamento",
+                "Composición territorial del presupuesto",
+            ]
         )
+    
+        with tab1:
+            st.plotly_chart(
+                fig_presupuesto_departamentos_atencion(data["treemap"]),
+                use_container_width=True,
+            )
+    
+            st.caption(
+                "Orden lógico: región → departamentos ordenados por participación presupuestal descendente. "
+                "Los tonos más oscuros indican mayor peso presupuestal dentro de cada región."
+            )
+    
+        with tab2:
+            st.plotly_chart(
+                fig_treemap(data["treemap"]),
+                use_container_width=True,
+            )
+    
+            st.caption(
+                "El treemap permite observar la composición del presupuesto por región y departamento. "
+                "El tamaño representa presupuesto asignado y el color representa participación en el presupuesto nacional."
+            )
+    
         st.info(
-            "El portafolio mueve alrededor de **USD 1.435 millones**. "
-            "No priorizar solo por región: Meta (~8,5 % nacional), Amazonas (~7,5 %), Caquetá (~7,0 %)."
+            "La barra jerárquica se usa para controlar el recorrido visual del espectador. "
+            "El treemap queda como apoyo exploratorio para ver composición y proporciones territoriales."
         )
 
     elif seccion.startswith("2"):
