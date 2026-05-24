@@ -12,6 +12,7 @@ import streamlit as st
 from charts import (
     fig_acumulado_proyectos_departamento,
     fig_depto_region,
+    fig_presupuesto_departamentos_atencion,
     fig_scatter_departamental,
     fig_scatter_regional,
     fig_sector_criticos,
@@ -95,7 +96,10 @@ def main():
 **Lectura esperada:** Las cinco regiones están parejas (~18–22 %); el detalle relevante está en departamentos como **Meta**, **Amazonas** y **Caquetá**.
             """
         )
-        st.plotly_chart(fig_treemap(data["treemap"]), use_container_width=True)
+        st.plotly_chart(
+            fig_presupuesto_departamentos_atencion(data["treemap"]),
+            use_container_width=True,
+        )
         st.info(
             "El portafolio mueve alrededor de **USD 1.435 millones**. "
             "No priorizar solo por región: Meta (~8,5 % nacional), Amazonas (~7,5 %), Caquetá (~7,0 %)."
@@ -105,9 +109,9 @@ def main():
         st.header("¿Dónde falla la ejecución por departamento?")
         st.markdown(
             """
-**Pregunta:** ¿En qué departamentos, dentro de cada región, se concentran los proyectos retrasados?
-
-En cada gráfico, los proyectos **retrasados** se muestran en **rojo**; los demás estados en escala de grises.
+        **Pregunta:** ¿Qué departamentos concentran mayor participación del presupuesto nacional?
+        
+        **Lectura esperada:** La visualización conserva todos los departamentos, pero ordena la lectura por región y por peso presupuestal descendente. Los tonos más oscuros dirigen la atención hacia los departamentos líderes dentro de cada región.
             """
         )
         region_sel = st.selectbox("Región", ORDEN_REGION)
