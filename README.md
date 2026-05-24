@@ -7,7 +7,8 @@
 - Juan Camilo Cataño Zuleta
 - Juan Manuel Agudelo Olarte
 - Carlos José Muñoz Cabrera 
-- Miguel Roldan Yepes 
+- Miguel Roldan Yepes
+  
 # Visualización del portafolio de proyectos en Colombia
 
 ## 1. Descripción general
