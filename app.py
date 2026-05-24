@@ -18,7 +18,6 @@ from charts import (
     fig_sector_criticos,
     fig_sector_depto,
     fig_sector_nacional,
-    fig_treemap,
 )
 from config import CRITICOS, ORDEN_REGION
 from data_loader import (
