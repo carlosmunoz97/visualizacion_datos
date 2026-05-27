@@ -175,7 +175,8 @@ def fig_presupuesto_departamentos_atencion(treemap_df: pd.DataFrame):
         .astype(int)
     )
 
-    COLOR_TOP_1 = "#374151"
+    # Resaltamos el departamento con mayor presupuesto dentro de cada región en rojo.
+    COLOR_TOP_1 = COLOR_ALERTA
     COLOR_TOP_2 = "#6B7280"
     COLOR_TOP_3 = "#9CA3AF"
     COLOR_RESTO = "#E5E7EB"
@@ -238,7 +239,9 @@ def fig_presupuesto_departamentos_atencion(treemap_df: pd.DataFrame):
             indices_ordenados.append(idx)
 
             if row["Rank_Region"] == 1:
-                x_labels.append(f"<b>{row['Departamento']}</b>")
+                x_labels.append(
+                    f"<b style='color:{COLOR_ALERTA}'>{row['Departamento']}</b>"
+                )
             elif row["Rank_Region"] == 2:
                 x_labels.append(
                     f"<span style='color:#4B5563'>{row['Departamento']}</span>"
