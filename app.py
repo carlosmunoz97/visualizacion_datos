@@ -35,6 +35,11 @@ from data_loader import (
     treemap_departamentos,
 )
 
+PREGUNTA_NEGOCIO_EJE = (
+    "¿En qué territorios y sectores conviene priorizar seguimiento ejecutivo del portafolio "
+    "para equilibrar peso presupuestario, ejecución (retrasos) y cobertura poblacional?"
+)
+
 
 @st.cache_data
 def cargar_datos():
@@ -82,10 +87,14 @@ def main():
             "3. Sector (críticos)",
             "4. Cobertura",
             "5. Conclusiones",
+            "6. Dashboard interactivo",
         ],
     )
 
     st.title("Informe ejecutivo — Visualización del portafolio")
+
+    if not seccion.startswith("6"):
+        st.markdown(f"**Pregunta de negocio:** {PREGUNTA_NEGOCIO_EJE}")
 
     if seccion.startswith("1"):
         st.header("¿Dónde está el presupuesto?")
@@ -270,6 +279,11 @@ a color; el resto en gris claro.
             "Borde rojo: Meta, Magdalena, Atlántico, Bogotá D.C. "
             "Color = nivel de retrasos (Bajo / Medio / Alto por terciles del % retrasado)."
         )
+
+    elif seccion.startswith("6"):
+        from dashboard_interactivo import render_dashboard_interactivo
+
+        render_dashboard_interactivo(data["df"])
 
     else:
         st.header("Conclusiones y recomendaciones")

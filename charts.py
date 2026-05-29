@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import sys
+
 import matplotlib
 
-matplotlib.use("Agg")
+# Agg solo fuera de Jupyter: en notebook/IPython se necesita backend interactivo.
+if "ipykernel" not in sys.modules:
+    matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
 import pandas as pd

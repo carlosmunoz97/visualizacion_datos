@@ -13,11 +13,16 @@
 
 ## 1. Descripción general
 
-Este notebook desarrolla un análisis visual del portafolio de proyectos en Colombia, considerando variables de presupuesto, ejecución, retrasos, cobertura poblacional y distribución territorial.
+El análisis se documenta en dos notebooks:
+
+| Archivo | Uso |
+|---------|-----|
+| **`taller 2/Visualizacion_datos_entrega.ipynb`** | Entrega del taller 2: EDA iterativo → hallazgo → visualizaciones aclaratorias → puente al dashboard |
+| `Visualizacion_datos_P.ipynb` | Notebook histórico de trabajo y experimentación (raíz del repo) |
 
 El objetivo principal es construir visualizaciones claras, justificadas y orientadas a la toma de decisiones, aplicando principios de ingeniería de la atención, reducción de ruido visual, ordenamiento lógico de los datos y uso selectivo del color.
 
-El análisis se complementa con una versión interactiva desarrollada en Streamlit, donde las mismas visualizaciones son organizadas en secciones ejecutivas.
+El análisis se complementa con un **dashboard web interactivo** en Streamlit (`app.py`), donde las mismas visualizaciones están organizadas en secciones ejecutivas.
 
 ---
 
